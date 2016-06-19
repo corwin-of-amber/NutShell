@@ -1,0 +1,29 @@
+.command { 
+  height: auto;
+}
+
+.command:focus { /* doesn't seem to affect CodeMirror */
+  background: rgba(0,0,255,0.01);
+  outline: none;
+}
+
+.command .CodeMirror, 
+.command .CodeMirror-scroll { 
+  font-family: Menlo,monospace;
+  font-size: 12px;
+  height: auto; 
+}
+
+.output {
+  font-family: Menlo,monospace; 
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.output.error {
+  color: red;
+}
+
+.command .suggestion {
+  opacity: 0.5;
+}
