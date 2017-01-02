@@ -11,13 +11,14 @@
 .command .CodeMirror-scroll { 
   font-family: Menlo,monospace;
   font-size: 12px;
-  height: auto; 
+  height: auto;
 }
 
 .output {
   font-family: Menlo,monospace; 
   font-size: 12px;
   white-space: pre-wrap;
+  overflow-x: auto;
 }
 
 .output.error {

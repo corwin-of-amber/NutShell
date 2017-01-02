@@ -6,11 +6,11 @@ class Interpreter
     bare = LiveScript.compile cmd, {+bare}
     (e=eval) bare
 
-  stringify = (s) ->
+  stringify: (s) ->
     try
       ""+s
     catch
       JSON.stringify s
 
 
-window <<< {l: LiveScript}
+window <<< {l: LiveScript, Interpreter}

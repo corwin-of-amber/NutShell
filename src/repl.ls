@@ -1,20 +1,24 @@
-      
+
 
 class Shell
   ->
     @cells = new Notebook
+    @interp = new Interpreter
     @state =
       cwd: "/"
 
 
+shell = void  # initializes after load
+
+
 Cell::execute = ->
   try
-    out = runEval @get 'command'
+    out = shell.interp.eval @get 'command'
     @set 'status', 'ok'
   catch e
     out = e
     @set 'status', 'error'
-  @set 'output', stringify out
+  @set 'output', shell.interp.stringify out
 
 
 class RCellView extends CellView
@@ -35,12 +39,14 @@ class RCellView extends CellView
       extraKeys:
         Enter:  !-> CodeMirror.signal it, 'execute'
         Up:     !-> CodeMirror.signal it, 'history-back'
-        Esc: !-> CodeMirror.signal it, 'retract'
+        Esc:    !-> CodeMirror.signal it, 'retract'
+        Tab:    !-> CodeMirror.signal it, 'complete'
 
   # Operations
 
   execute: ->
     @flush-suggestions /*force=*/true
+    <~ requestAnimationFrame   # forces handling of CodeMirror change event(s) */
     @model.execute!
     @goto-next!
 
@@ -50,7 +56,9 @@ class RCellView extends CellView
       @editor
         ..setValue prev.get('command')
         ..execCommand \goDocEnd
-        ..markText {line:0, ch: 0}, {line: ..lastLine!, ch: ..getLine(..lastLine!).length}, {className: 'suggestion'}
+        start = {line:0, ch: 0}
+        end   = {line: ..lastLine!, ch: ..getLine(..lastLine!).length}
+        ..markText start, end, {className: 'suggestion'}
 
 
 class RNotebookView extends NotebookView
@@ -58,15 +66,16 @@ class RNotebookView extends NotebookView
 
 
 $ ->
-  shell = new Shell
+  shell := new Shell
 
   new RNotebookView model: shell.cells
     ..$el.append-to 'body'
+    window.view = ..
 
   new Cell command: 'ls', output: 'file.txt'
     shell.cells.add ..
   new Cell
     shell.cells.add ..
     ..trigger 'request-focus'
-  
+
   window <<< {shell}
