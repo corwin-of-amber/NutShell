@@ -4,8 +4,9 @@ import completionList from '../../components/completion-list.vue';
 
 
 
-class CompletionWidget extends Vue {
+class CompletionList extends Vue {
     items: CompletionSuggestion[]
+    $el: HTMLTableElement
 
     constructor() {
         super(completionList);
@@ -27,8 +28,15 @@ class NoSuggestionBox implements SuggestionBox {
 }
 
 
-import {EditorView, ViewPlugin, ViewUpdate} from "@codemirror/view"
+import { EditorView, ViewPlugin, ViewUpdate, WidgetType } from "@codemirror/view"
 
+class CompletionWidget extends WidgetType {
+    list = new CompletionList().$mount();
+
+    get items() { return this.list.items; }
+    set items(v: CompletionSuggestion[]) { this.list.items = v; }
+    toDOM() { return this.list.$mount().$el; }
+}
 
 class CompletionPlugin {
     static widget: CompletionWidget

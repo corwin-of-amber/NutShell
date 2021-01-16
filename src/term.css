@@ -1,0 +1,26 @@
+html, body {
+    height: 100%;
+    margin: 0;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+.cm-wrap {
+    height: 90%;
+    width: 90%;
+    outline: none !important;  /* @oops */
+}
+
+.cm-content {
+    padding: 0 !important;  /* @oops */
+}
+
+.shell--prompt {
+    color: purple;
+}
+
+.shell--output {
+    color: #666;
+}

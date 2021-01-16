@@ -1,5 +1,5 @@
 <template>
-    <table>
+    <table class="shell--completion-list">
         <tr v-for="(row, $idx) in rows" :key="$idx">
             <td v-for="(cell, $idx) in row" :key="$idx">
                 {{cell.text}}
@@ -11,6 +11,8 @@
 <style scoped>
 td {
     padding-right: 3em;
+    white-space: nowrap;
+    line-height: 1.1;
 }
 </style>
 
