@@ -1,5 +1,6 @@
 import fs from 'fs';
-import { SuggestionBox } from '.';
+import path from 'path';
+import { CompletionSuggestion, SuggestionBox } from '.';
 import { ShellExpansion } from '../expansion';
 
 
@@ -22,7 +23,17 @@ class FileSuggestionBox implements SuggestionBox {
         catch { return []; }
 
         return entries.filter(nm => nm.startsWith(basePrefix))
-                      .map(nm => ({text: nm, for: basePrefix}));
+                      .map(nm => ({for: basePrefix, ...this._suggest(dir, nm)}));
+    }
+
+    _suggest(dir: string, filename: string) {
+        var v: CompletionSuggestion = {text: filename};
+        try {
+            var s = fs.statSync(path.join(dir, filename));
+            v.follow = s.isDirectory() ? '/' : ' ';
+        }
+        catch { /* file not found - no follow */ }
+        return v;
     }
 }
 

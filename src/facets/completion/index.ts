@@ -11,11 +11,30 @@ class CompletionList extends Vue {
     constructor() {
         super(completionList);
     }
+    longestCommonPrefix() {
+        switch (this.items.length) {
+        case 0: return undefined;
+        case 1: return this.items[0];
+        default: 
+            var v = this.items[0];
+            return {for: v.for, text: v.text.slice(0, this.longestCommonPrefixLength())};
+        }
+    }
+
+    longestCommonPrefixLength() {
+        var cand = this.items.map(s => s.text),
+            maxlen = Math.max(0, ...cand.map(s => s.length));
+        for (let i = 0; i < maxlen; i++) {
+            if (!cand.every(s => s[i] == cand[0][i])) return i;
+        }
+        return maxlen;
+    }
 }
 
 type CompletionSuggestion = {
     for?: string
     text: string
+    follow?: string
 }
 
 
@@ -28,7 +47,11 @@ class NoSuggestionBox implements SuggestionBox {
 }
 
 
-import { EditorView, ViewPlugin, ViewUpdate, WidgetType } from "@codemirror/view"
+import { EditorState, EditorSelection } from '@codemirror/state';
+import { EditorView, ViewPlugin, ViewUpdate,
+         Decoration, WidgetType } from '@codemirror/view'
+import { DecorationPlugin } from '../../base';
+
 
 class CompletionWidget extends WidgetType {
     list = new CompletionList().$mount();
@@ -42,34 +65,112 @@ class CompletionPlugin {
     static widget: CompletionWidget
     static box: SuggestionBox = new NoSuggestionBox
 
+    static readonly interaction = new DecorationPlugin
+
     constructor(view: EditorView) {
     }
 
-    get widget() {
-        CompletionPlugin._init();
-        return CompletionPlugin.widget!;
-    }
+    get widget() { return CompletionPlugin.widget; }
 
     update(update: ViewUpdate) {
-        const state = update.state;
-        let at = state.selection.main.from,
-            line = state.doc.lineAt(at),
-            prefix = line.text.slice(0, at - line.from)
-                     .match(/\S*$/)[0];
-        
-        this.widget.items = CompletionPlugin.box.suggestFor(prefix)
-            .map(s => ({for: prefix, ...s}));
+        if (!this.widget) return;
+
+        let isStarting = this._isStarting(update);
+
+        if (isStarting || update.docChanged || update.selectionSet) {
+            const state = update.state;
+            let at = state.selection.main.from,
+                line = state.doc.lineAt(at),
+                prefix = line.text.slice(0, at - line.from)
+                        .match(/\S*$/)[0];
+            
+            if (!isStarting && !prefix) {
+                requestAnimationFrame(() => this.stop(update.view));
+            }
+
+            this.widget.items = CompletionPlugin.box.suggestFor(prefix)
+                .map(s => ({for: prefix, ...s}));
+        }
+    }
+
+    stop(view: EditorView) {
+        view.dispatch({effects: CompletionPlugin.interaction.set.of([])});
+    }
+
+    _isStarting(update: ViewUpdate) {
+        return update.transactions.some(tr =>
+            tr.effects.some(eff => eff.is(CompletionPlugin.interaction.set)
+                                   && eff.value.length > 0));
     }
 
     destroy() { }
 
-    static _init() {
-        CompletionPlugin.widget ||= new CompletionWidget();
+    static extension = [ViewPlugin.fromClass(CompletionPlugin),
+                        CompletionPlugin.interaction.field];
+
+    static transactions: typeof CompletionState;
+    static commands: typeof CompletionCommands;
+}
+
+
+import { ShellState } from '../../term';  /* circular dep... sry */
+
+
+class CompletionState {
+
+    static show(state: EditorState, pos: number = ShellState.cursor(state)) {
+        var cmd = ShellState.commandAt(state, pos),
+            nl = cmd.to == state.doc.length ? [{from: cmd.to, insert: '\n'}] : [],
+            widget = CompletionPlugin.widget = new CompletionWidget,
+            d = Decoration.widget({widget, block: true}).range(cmd.to + 1);
+        return {changes: nl, effects: CompletionPlugin.interaction.set.of([d])};
+    }
+
+    static apply(state: EditorState, selected: CompletionSuggestion) {
+        let sel = state.selection.main,
+            before = selected.for,
+            after = selected.text + (selected.follow || '');
+        if (before) sel = sel.extend(sel.from - before.length);
+        return state.update({
+            changes: [{...sel, insert: after}],
+            selection: EditorSelection.cursor(sel.from + after.length),
+            scrollIntoView: true
+        });
     }
 }
 
-const completionPlugin = ViewPlugin.fromClass(CompletionPlugin);
+class CompletionCommands {
+
+    static show(cm: EditorView) {
+        cm.dispatch(CompletionState.show(cm.state));
+    }
+
+    static start(cm: EditorView) {
+        CompletionCommands.show(cm);
+        CompletionCommands.longest(cm);
+        return true;
+    }
+
+    static first(cm: EditorView) {
+        var s = CompletionPlugin.widget.items[0];
+        if (s) {
+            cm.dispatch(CompletionState.apply(cm.state, s));
+        }
+        return !!s;
+    }
+
+    static longest(cm: EditorView) {
+        var s = CompletionPlugin.widget.list.longestCommonPrefix();
+        if (s && s.text) {
+            cm.dispatch(CompletionState.apply(cm.state, s));
+        }
+        return !!s;
+    }
+}
+
+CompletionPlugin.transactions = CompletionState;
+CompletionPlugin.commands = CompletionCommands;
+
 
 export { CompletionWidget, CompletionSuggestion,
-         CompletionPlugin, completionPlugin,
-         SuggestionBox }
+         CompletionPlugin, SuggestionBox }

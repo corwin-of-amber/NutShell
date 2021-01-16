@@ -1,13 +1,11 @@
 import $ from 'jquery';
 import { EditorState, EditorView, basicSetup } from "@codemirror/basic-setup"
 import { keymap } from "@codemirror/view";
-import { Decoration, DecorationSet, Range, WidgetType } from '@codemirror/view';
-import { RangeSet } from '@codemirror/rangeset';
-import { StateField, StateEffect, EditorSelection,
-         Transaction } from '@codemirror/state';
+import { Decoration, WidgetType } from '@codemirror/view';
+import { EditorSelection } from '@codemirror/state';
 
-import { CompletionPlugin, completionPlugin, 
-         CompletionSuggestion, 
+import { DecorationPlugin } from './base';
+import { CompletionPlugin, CompletionSuggestion, 
          CompletionWidget} from './facets/completion';
 import { FileSuggestionBox } from './facets/completion/files';
 
@@ -15,36 +13,8 @@ import './term.css';
 
 
 
-class DecorationPlugin {
-    readonly add = StateEffect.define<Range<Decoration>[]>()
-    readonly set = StateEffect.define<Range<Decoration>[]>()
-
-    readonly field: StateField<DecorationSet>
-
-    constructor(startState: DecorationSet = Decoration.none) {
-        let self = this;
-        this.field = StateField.define<DecorationSet>({
-            create() { return startState },
-            update(value, tr) { return self.update(value, tr); },
-            provide: f => EditorView.decorations.from(f)
-        });
-    }
-
-    update(value: DecorationSet, tr: Transaction) {
-        value = value.map(tr.changes)
-        for (let effect of tr.effects) {
-            if (effect.is(this.add))
-                value = value.update({add: effect.value})
-            else if (effect.is(this.set))
-                value = RangeSet.of(effect.value);
-        }
-        return value
-    }
-}
-
 const prompts = new DecorationPlugin,
-      outputs = new DecorationPlugin,
-      interaction = new DecorationPlugin;
+      outputs = new DecorationPlugin;
 
 
 class ShellState {
@@ -65,27 +35,8 @@ class ShellState {
         return {effects: outputs.add.of([d])};
     }
 
-    static makeCompletions(state: EditorState, pos: number = ShellState.cursor(state)) {
-        var cmd = ShellState.commandAt(state, pos),
-            nl = cmd.to == state.doc.length ? [{from: cmd.to, insert: '\n'}] : [],
-            widget = CompletionPlugin.widget = new CompletionWidget,
-            d = Decoration.widget({widget, block: true}).range(cmd.to + 1);
-        return {changes: nl, effects: interaction.set.of([d])};
-    }
-
-    static completionApply(state: EditorState, selected: CompletionSuggestion) {
-        let sel = state.selection.main,
-            before = selected.for, after = selected.text;
-        if (before) sel = sel.extend(sel.from - before.length);
-        return state.update({
-            changes: [{...sel, insert: after}],
-            selection: EditorSelection.cursor(sel.from + after.length),
-            scrollIntoView: true
-        });
-    }
-
     static clearInteraction(state: EditorState) {
-        return {effects: interaction.set.of([])};
+        return {effects: CompletionPlugin.interaction.set.of([])};
     }
 }
 
@@ -99,10 +50,6 @@ class ShellCommands {
         cm.dispatch(ShellState.makeOutput(cm.state));
     }
 
-    static makeCompletions(cm: EditorView) {
-        cm.dispatch(ShellState.makeCompletions(cm.state));
-    }
-
     static execLine(cm: EditorView) {
         ShellCommands.clearInteraction(cm);
         cm.dispatch(cm.state.replaceSelection("↵"));
@@ -113,29 +60,17 @@ class ShellCommands {
         return true;
     }
 
-    static completionStart(cm: EditorView) {
-        ShellCommands.makeCompletions(cm);
-        ShellCommands.completionFirst(cm);
-        return true;
-    }
-
-    static completionFirst(cm: EditorView) {
-        var s = CompletionPlugin.widget.items[0];
-        if (s) {
-            cm.dispatch(ShellState.completionApply(cm.state, s));
-        }
-        return !!s;
-    }
-
     static clearInteraction(cm: EditorView) {
         cm.dispatch(ShellState.clearInteraction(cm.state));
         return true;
     }
 }
 
+export { ShellState, ShellCommands }
+
 const shellKeys = keymap.of([
     { key: "Enter", run: ShellCommands.execLine },
-    { key: "Tab", run: ShellCommands.completionStart },
+    { key: "Tab", run: CompletionPlugin.commands.start },
     { key: "Escape", run: ShellCommands.clearInteraction }
 ]);
 
@@ -158,12 +93,11 @@ class OutputWidget extends WidgetType {
 
 
 function main() {
-    console.log("↵");
     let cm = new EditorView({
         state: EditorState.create({
           extensions: [shellKeys, basicSetup,
-            prompts.field, outputs.field, interaction.field,
-            completionPlugin]
+            prompts.field, outputs.field,
+            CompletionPlugin.extension]
         }),
         parent: document.body
     });
