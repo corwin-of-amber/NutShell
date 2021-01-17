@@ -2,10 +2,11 @@ import fs from 'fs';
 import path from 'path';
 import { CompletionSuggestion, SuggestionBox } from '.';
 import { ShellExpansion } from '../expansion';
+import type { ShellState } from '../../term';
 
 
 class FileSuggestionBox implements SuggestionBox {
-    cwd: string = '.'
+    state: ShellState
     expand = new ShellExpansion
 
     suggestFor(prefix: string) {
@@ -19,11 +20,15 @@ class FileSuggestionBox implements SuggestionBox {
 
         dir = this.expand.directory(dir);
 
-        try { var entries = fs.readdirSync(dir); }
+        try { var entries = this.readdir(dir); }
         catch { return []; }
 
         return entries.filter(nm => nm.startsWith(basePrefix))
                       .map(nm => ({for: basePrefix, ...this._suggest(dir, nm)}));
+    }
+
+    readdir(dir: string) {
+        return fs.readdirSync(path.resolve(this.state.cwd, dir));
     }
 
     _suggest(dir: string, filename: string) {
