@@ -1,23 +1,18 @@
-import assert from 'assert';
 import path from 'path';
 import $ from 'jquery';
 
-import { EditorState, EditorView, basicSetup } from "@codemirror/basic-setup"
+import { EditorState, EditorView } from "@codemirror/basic-setup"
 import { keymap } from "@codemirror/view";
-import { Decoration, WidgetType } from '@codemirror/view';
 
-import { DecorationPlugin } from './base';
 import { Command } from './syntax/command';
 import { CompletionPlugin } from './facets/completion';
 import { FileSuggestionBox } from './facets/completion/files';
-import { SubprocessJob, OutputWidget } from './facets/jobs';
+import { PtySubprocessJob, XtermOutputWidget } from './facets/jobs';
+
+import { CommandLineEditor } from './components/command-line';
 
 import './term.css';
 
-
-
-const prompts = new DecorationPlugin,
-      outputs = new DecorationPlugin;
 
 
 class ShellState {
@@ -33,41 +28,6 @@ class ShellState {
         return c;
     }
 
-    static cursor(state: EditorState) { return state.selection.main.head; }
-
-    static commandAt(state: EditorState, pos: number = ShellState.cursor(state)) {
-        var line = state.doc.lineAt(pos);
-        return {from: line.from, to: line.to}; /** @todo multi-line */
-    }
-
-    static promptAt(state: EditorState, pos: number = ShellState.cursor(state)) {
-        var {from} = ShellState.commandAt(state, pos), prompt: PromptWidget;
-        state.field(prompts.field).between(from, from + 1, (f, t, d) => {
-            var w = d.spec?.widget;
-            if (w instanceof PromptWidget) {
-                /**/ assert(!prompt); /**/
-                prompt = w;
-            }
-        });
-        return prompt;
-    }
-
-    static stateAt(state: EditorState, pos: number = ShellState.cursor(state)) {
-        return ShellState.promptAt(state, pos)?.state;
-    }
-
-    makePrompt(state: EditorState, pos: number = ShellState.cursor(state)) {
-        var widget = new PromptWidget(this),
-            d = Decoration.widget({widget, side: -1}).range(pos);
-        return {effects: prompts.add.of([d]), scrollIntoView: true};
-    }
-
-    static makeOutput(state: EditorState, pos: number = ShellState.cursor(state)) {
-        var widget = new OutputWidget,
-            d = Decoration.widget({widget, side: -2, block: true}).range(pos);
-        return {widget, tr: {effects: outputs.add.of([d])}};
-    }
-
     static clearInteraction(state: EditorState) {
         return {effects: CompletionPlugin.interaction.set.of([])};
     }
@@ -75,27 +35,24 @@ class ShellState {
 
 
 class ShellCommands {
-    static makePrompt(cm: EditorView, shellState: ShellState) {
-        cm.dispatch(shellState.makePrompt(cm.state));
+    static makePrompt(shellState: ShellState) {
+        let cm = new CommandLineEditor(shellKeys);
+        cm.dispatch(cm.makePrompt(shellState));
+        return cm;
     }
 
-    static makeOutput(cm: EditorView) {
-        var {widget, tr} = ShellState.makeOutput(cm.state);
-        cm.dispatch(tr);
-        return widget;
-    }
-
-    static execLine(cm: EditorView) {
-        var shellState = ShellState.stateAt(cm.state)!,
-            range = ShellState.commandAt(cm.state),
-            cmd = cm.state.doc.sliceString(range.from, range.to);
-        ShellCommands.clearInteraction(cm);
-        cm.dispatch(cm.state.replaceSelection("↵"));
-        shellState = ShellCommands.execCommand(cm, shellState, 
-                        Command.parse(cmd || "ls /"));
-        cm.dispatch(cm.state.replaceSelection("\n"));
-        ShellCommands.makePrompt(cm, shellState);
-        return true;
+    static execLine(cm: CommandLineEditor) {
+        var shellState = cm.shellState,
+            cmd = cm.command;
+        if (shellState) {
+            ShellCommands.clearInteraction(cm);
+            cm.dispatch(cm.state.replaceSelection("↵"));
+            shellState = ShellCommands.execCommand(cm, shellState, 
+                            Command.parse(cmd || "ls -1 /" /** @todo remove this */));
+            ShellCommands.makePrompt(shellState).focus();
+            return true;
+        }
+        else return false;
     }
 
     static execCommand(cm: EditorView, shellState: ShellState, command: Command) {
@@ -108,16 +65,19 @@ class ShellCommands {
     }
 
     static execSubprocess(cm: EditorView, shellState: ShellState, command: Command) {
-        var out = ShellCommands.makeOutput(cm);
-        var job = new SubprocessJob(shellState, command);
+        var job = new PtySubprocessJob(shellState, command),
+            out = new XtermOutputWidget();
         job.start();
         job.attach(out);
+        out.$el.insertAfter(cm.dom);
+        /** @todo this seems to work by some magic */
+        out.term.onLineFeed(() => cm.dom.scrollIntoView());
         return shellState;
     }
 
-    static completionStart(cm: EditorView) {
+    static completionStart(cm: CommandLineEditor) {
         if (CompletionPlugin.box instanceof FileSuggestionBox)
-            CompletionPlugin.box.state = ShellState.stateAt(cm.state)!;
+            CompletionPlugin.box.state = cm.shellState;
         return CompletionPlugin.commands.start(cm);
     }
 
@@ -136,37 +96,20 @@ const shellKeys = keymap.of([
 ]);
 
 
-class PromptWidget extends WidgetType {
-    state: ShellState
 
-    constructor(state: ShellState) { super(); this.state = state; }
-
-    toDOM(view: EditorView): HTMLElement {
-        return $('<span>').addClass('shell--prompt')
-            .text(`${this.state.cwd} # `)[0];
-    }
-}
 
 
 function main() {
-    let cm = new EditorView({
-        state: EditorState.create({
-          extensions: [shellKeys, basicSetup,
-            prompts.field, outputs.field,
-            CompletionPlugin.extension]
-        }),
-        parent: document.body
-    });
-
     let shellState = new ShellState;
     shellState.cwd = process.cwd();
 
-    ShellCommands.makePrompt(cm, shellState);
+    var cm = ShellCommands.makePrompt(shellState);
     cm.focus();
 
     CompletionPlugin.box = new FileSuggestionBox();
 
-    Object.assign(window, {cm, prompts, outputs, ShellState, ShellCommands, CompletionPlugin});
+    Object.assign(window, {cm,
+        ShellState, ShellCommands, CompletionPlugin});
 }
 
 $(main);

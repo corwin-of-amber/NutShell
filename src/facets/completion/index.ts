@@ -2,6 +2,8 @@ import Vue from 'vue';
 // @ts-ignore
 import completionList from '../../components/completion-list.vue';
 
+import type { CommandLineEditor } from '../../components/command-line';
+
 
 
 class CompletionList extends Vue {
@@ -50,7 +52,7 @@ class NoSuggestionBox implements SuggestionBox {
 import { EditorState, EditorSelection } from '@codemirror/state';
 import { EditorView, ViewPlugin, ViewUpdate,
          Decoration, WidgetType } from '@codemirror/view'
-import { DecorationPlugin } from '../../base';
+import { DecorationPlugin } from '../../components/base';
 
 
 class CompletionWidget extends WidgetType {
@@ -113,17 +115,14 @@ class CompletionPlugin {
 }
 
 
-import { ShellState } from '../../term';  /* circular dep... sry */
-
-
 class CompletionState {
 
-    static show(state: EditorState, pos: number = ShellState.cursor(state)) {
-        var cmd = ShellState.commandAt(state, pos),
-            nl = cmd.to == state.doc.length ? [{from: cmd.to, insert: '\n'}] : [],
+    static show(state: EditorState) {
+        var at = state.doc.length + 1,
+            spc = [{from: state.doc.length, insert: ' '}],  /** @todo these spaces do pile up */
             widget = CompletionPlugin.widget = new CompletionWidget,
-            d = Decoration.widget({widget, block: true}).range(cmd.to + 1);
-        return {changes: nl, effects: CompletionPlugin.interaction.set.of([d])};
+            d = Decoration.widget({widget, block: true}).range(at);
+        return {changes: spc, effects: CompletionPlugin.interaction.set.of([d])};
     }
 
     static apply(state: EditorState, selected: CompletionSuggestion) {
@@ -141,11 +140,11 @@ class CompletionState {
 
 class CompletionCommands {
 
-    static show(cm: EditorView) {
+    static show(cm: CommandLineEditor) {
         cm.dispatch(CompletionState.show(cm.state));
     }
 
-    static start(cm: EditorView) {
+    static start(cm: CommandLineEditor) {
         CompletionCommands.show(cm);
         CompletionCommands.longest(cm);
         return true;

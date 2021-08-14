@@ -9,6 +9,15 @@ class ShellExpansion {
         return direxpr;
     }
 
+    undirectory(dir: string) {
+        var home = this.home;
+        if (dir == home) return '~';
+        else if (dir.startsWith(home + '/'))
+            return '~' + dir.slice(home.length);
+        else
+            return dir;
+    }
+
     get home() {
         return process.env['HOME'];
     }

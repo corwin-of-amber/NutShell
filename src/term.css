@@ -8,8 +8,6 @@ html, body {
 }
 
 .cm-wrap {
-    height: 90%;
-    width: 90%;
     outline: none !important;  /* @oops */
 }
 
@@ -17,10 +15,12 @@ html, body {
     padding: 0 !important;  /* @oops */
 }
 
-.shell--prompt {
-    color: purple;
-}
+.shell--prompt--cwd { color: purple; }
+.shell--prompt--sep { color: #888; }
 
 .shell--output {
     color: #666;
+    max-height: 1000px;
+    max-width: 100%;
+    overflow: auto;
 }
